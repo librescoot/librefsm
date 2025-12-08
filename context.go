@@ -27,8 +27,13 @@ func (c *Context) IsInState(id StateID) bool {
 
 // StartTimer starts a named timer that will inject an event when it fires.
 // If a timer with the same name exists, it is reset.
-func (c *Context) StartTimer(name string, duration time.Duration, event Event) {
-	c.FSM.startTimerInternal(name, duration, event, TimerScopeState, c.FSM.currentState)
+// An optional action callback can be provided which runs before the event is sent.
+func (c *Context) StartTimer(name string, duration time.Duration, event Event, action ...func(*Context) error) {
+	var cb func(*Context) error
+	if len(action) > 0 {
+		cb = action[0]
+	}
+	c.FSM.startTimerInternalWithAction(name, duration, event, TimerScopeState, c.FSM.currentState, cb)
 }
 
 // StartTimerGlobal starts a timer that won't be auto-cancelled on state exit

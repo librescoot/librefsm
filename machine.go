@@ -359,7 +359,7 @@ func (m *Machine) enterState(id StateID, event *Event) error {
 	// Start declarative timeout timer
 	if state.Timeout > 0 && state.TimeoutEvent != "" {
 		timerName := fmt.Sprintf("_timeout_%s", id)
-		m.startTimerInternal(timerName, state.Timeout, Event{ID: state.TimeoutEvent}, TimerScopeState, id)
+		m.startTimerInternalWithAction(timerName, state.Timeout, Event{ID: state.TimeoutEvent}, TimerScopeState, id, state.TimeoutAction)
 	}
 
 	// Execute entry action (for junction, this runs before condition)

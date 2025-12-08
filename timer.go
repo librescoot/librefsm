@@ -11,10 +11,16 @@ type timerEntry struct {
 	scope      TimerScope
 	ownerState StateID
 	duration   time.Duration
+	action     func(*Context) error // Optional callback to run before sending event
 }
 
 // startTimerInternal starts a named timer with scope tracking
 func (m *Machine) startTimerInternal(name string, duration time.Duration, event Event, scope TimerScope, owner StateID) {
+	m.startTimerInternalWithAction(name, duration, event, scope, owner, nil)
+}
+
+// startTimerInternalWithAction starts a named timer with an optional action callback
+func (m *Machine) startTimerInternalWithAction(name string, duration time.Duration, event Event, scope TimerScope, owner StateID, action func(*Context) error) {
 	m.timerMu.Lock()
 	defer m.timerMu.Unlock()
 
@@ -28,10 +34,22 @@ func (m *Machine) startTimerInternal(name string, duration time.Duration, event 
 	t := time.AfterFunc(duration, func() {
 		m.timerMu.Lock()
 		// Check timer still exists (wasn't cancelled)
-		if _, ok := m.timers[name]; ok {
+		entry, ok := m.timers[name]
+		if ok {
+			timerAction := entry.action
 			delete(m.timers, name)
 			m.timerMu.Unlock()
+
 			m.logger.Debug("timer fired", "name", name, "event", event.ID)
+
+			// Run action callback before sending event
+			if timerAction != nil {
+				ctx := m.makeContext(nil)
+				if err := timerAction(ctx); err != nil {
+					m.logger.Error("timer action failed", "name", name, "error", err)
+				}
+			}
+
 			m.Send(event)
 		} else {
 			m.timerMu.Unlock()
@@ -44,6 +62,7 @@ func (m *Machine) startTimerInternal(name string, duration time.Duration, event 
 		scope:      scope,
 		ownerState: owner,
 		duration:   duration,
+		action:     action,
 	}
 
 	m.logger.Debug("timer started", "name", name, "duration", duration, "event", event.ID)

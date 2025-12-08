@@ -16,8 +16,9 @@ type State struct {
 	Condition func(ctx *Context) StateID
 
 	// Declarative timeout: auto-started on entry, auto-cancelled on exit
-	Timeout      time.Duration
-	TimeoutEvent EventID
+	Timeout       time.Duration
+	TimeoutEvent  EventID
+	TimeoutAction func(*Context) error // Optional callback to run before sending timeout event
 
 	// Declared timers (for auto-cleanup on state exit)
 	DeclaredTimers []string
@@ -54,11 +55,15 @@ func WithOnExit(fn func(*Context) error) StateOption {
 	}
 }
 
-// WithTimeout sets a declarative timeout that auto-starts on entry
-func WithTimeout(duration time.Duration, event EventID) StateOption {
+// WithTimeout sets a declarative timeout that auto-starts on entry.
+// An optional third argument specifies a callback to run before the timeout event is sent.
+func WithTimeout(duration time.Duration, event EventID, action ...func(*Context) error) StateOption {
 	return func(s *State) {
 		s.Timeout = duration
 		s.TimeoutEvent = event
+		if len(action) > 0 {
+			s.TimeoutAction = action[0]
+		}
 	}
 }
 
