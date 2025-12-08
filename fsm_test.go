@@ -378,6 +378,52 @@ func TestDeclarativeTimeout(t *testing.T) {
 	}
 }
 
+func TestDeclarativeTimeoutWithCallback(t *testing.T) {
+	var callbackRan bool
+	var callbackRanBeforeTransition bool
+
+	def := NewDefinition().
+		State(stateA,
+			WithTimeout(50*time.Millisecond, evTimeout, func(c *Context) error {
+				callbackRan = true
+				// Check we're still in state A (callback runs before event)
+				callbackRanBeforeTransition = c.CurrentState() == stateA
+				return nil
+			}),
+		).
+		State(stateB).
+		Transition(stateA, evTimeout, stateB).
+		Initial(stateA)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	// Wait for timeout
+	time.Sleep(100 * time.Millisecond)
+
+	if !callbackRan {
+		t.Error("timeout callback should have run")
+	}
+
+	if !callbackRanBeforeTransition {
+		t.Error("timeout callback should run before transition (while still in state A)")
+	}
+
+	if m.CurrentState() != stateB {
+		t.Errorf("expected state %s after timeout, got %s", stateB, m.CurrentState())
+	}
+}
+
 func TestImperativeTimer(t *testing.T) {
 	def := NewDefinition().
 		State(stateA,
@@ -418,6 +464,54 @@ func TestImperativeTimer(t *testing.T) {
 	// Timer should be gone
 	if m.TimerActive("test") {
 		t.Error("timer should not be active after firing")
+	}
+}
+
+func TestImperativeTimerWithCallback(t *testing.T) {
+	var callbackRan bool
+	var callbackRanBeforeTransition bool
+
+	def := NewDefinition().
+		State(stateA,
+			WithOnEnter(func(c *Context) error {
+				c.StartTimer("test", 50*time.Millisecond, Event{ID: evTimeout}, func(ctx *Context) error {
+					callbackRan = true
+					callbackRanBeforeTransition = ctx.CurrentState() == stateA
+					return nil
+				})
+				return nil
+			}),
+		).
+		State(stateB).
+		Transition(stateA, evTimeout, stateB).
+		Initial(stateA)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	// Wait for timer
+	time.Sleep(100 * time.Millisecond)
+
+	if !callbackRan {
+		t.Error("timer callback should have run")
+	}
+
+	if !callbackRanBeforeTransition {
+		t.Error("timer callback should run before transition (while still in state A)")
+	}
+
+	if m.CurrentState() != stateB {
+		t.Errorf("expected state %s after timer, got %s", stateB, m.CurrentState())
 	}
 }
 
