@@ -22,6 +22,20 @@ func WithGuard(fn func(*Context) bool) TransitionOption {
 	}
 }
 
+// WithGuards sets multiple guard conditions that must ALL pass (AND logic)
+func WithGuards(guards ...func(*Context) bool) TransitionOption {
+	return func(t *Transition) {
+		t.Guard = func(ctx *Context) bool {
+			for _, g := range guards {
+				if !g(ctx) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+}
+
 // WithAction sets an action to execute during the transition
 func WithAction(fn func(*Context) error) TransitionOption {
 	return func(t *Transition) {

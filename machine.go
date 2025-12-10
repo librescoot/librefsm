@@ -63,6 +63,12 @@ func WithStateChangeCallback(fn func(from, to StateID)) MachineOption {
 	}
 }
 
+// OnStateChange sets a callback invoked after each state change.
+// Can be called after Build() but before Start().
+func (m *Machine) OnStateChange(fn func(from, to StateID)) {
+	m.stateChangeCallback = fn
+}
+
 // Start initializes the machine and begins the event loop
 func (m *Machine) Start(ctx context.Context) error {
 	m.ctx, m.cancel = context.WithCancel(ctx)
@@ -121,6 +127,41 @@ func (m *Machine) CurrentState() StateID {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.currentState
+}
+
+// SetState forces a direct state change, bypassing normal event-driven transitions.
+// This is useful for hybrid migrations where legacy code needs to set state directly.
+// It properly exits the current state and enters the new state, running callbacks.
+func (m *Machine) SetState(newState StateID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.definition.states[newState]; !ok {
+		return fmt.Errorf("unknown state: %s", newState)
+	}
+
+	if m.currentState == newState {
+		return nil
+	}
+
+	fromState := m.currentState
+
+	// Exit current state
+	if err := m.exitState(m.currentState); err != nil {
+		return fmt.Errorf("exit state %s: %w", m.currentState, err)
+	}
+
+	// Enter new state
+	if err := m.enterState(newState, nil); err != nil {
+		return fmt.Errorf("enter state %s: %w", newState, err)
+	}
+
+	// Notify callback
+	if m.stateChangeCallback != nil {
+		m.stateChangeCallback(fromState, m.currentState)
+	}
+
+	return nil
 }
 
 // IsInState checks if the given state is the current state or an ancestor
