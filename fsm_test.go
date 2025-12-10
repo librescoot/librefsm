@@ -159,6 +159,70 @@ func TestGuard(t *testing.T) {
 	}
 }
 
+func TestGuardFallthrough(t *testing.T) {
+	var option1Allowed, option2Allowed bool
+
+	def := NewDefinition().
+		State(stateA).
+		State(stateB).
+		State(stateC).
+		// Multiple transitions for same event, different guards
+		Transition(stateA, evGo, stateB,
+			WithGuard(func(c *Context) bool {
+				return option1Allowed
+			}),
+		).
+		Transition(stateA, evGo, stateC,
+			WithGuard(func(c *Context) bool {
+				return option2Allowed
+			}),
+		).
+		// Add back transitions for resetting
+		Transition(stateB, evBack, stateA).
+		Transition(stateC, evBack, stateA).
+		Initial(stateA)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	// Both guards block - no transition
+	option1Allowed = false
+	option2Allowed = false
+	m.SendSync(Event{ID: evGo})
+	if m.CurrentState() != stateA {
+		t.Errorf("both guards blocked, should stay in stateA, got %v", m.CurrentState())
+	}
+
+	// First guard blocks, second allows - should take second transition (FALLTHROUGH!)
+	option1Allowed = false
+	option2Allowed = true
+	m.SendSync(Event{ID: evGo})
+	if m.CurrentState() != stateC {
+		t.Errorf("second guard allowed (fallthrough), should be in stateC, got %v", m.CurrentState())
+	}
+
+	// Reset to stateA
+	m.SendSync(Event{ID: evBack})
+
+	// First guard allows - should take first transition (doesn't try second)
+	option1Allowed = true
+	option2Allowed = false
+	m.SendSync(Event{ID: evGo})
+	if m.CurrentState() != stateB {
+		t.Errorf("first guard allowed, should be in stateB, got %v", m.CurrentState())
+	}
+}
+
 func TestTransitionAction(t *testing.T) {
 	var actionData string
 

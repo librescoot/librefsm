@@ -219,35 +219,48 @@ func (m *Machine) processEvent(event Event) error {
 
 	m.logger.Debug("processing event", "event", event.ID, "state", m.currentState)
 
-	// Find matching transition
-	transition := m.findTransition(event)
-	if transition == nil {
+	// Find all matching transitions
+	transitions := m.findAllTransitions(event)
+	if len(transitions) == 0 {
 		m.logger.Debug("no transition found", "event", event.ID, "state", m.currentState)
 		return nil
 	}
 
-	// Check guard
-	if transition.Guard != nil {
-		ctx := m.makeContext(&event)
-		if !transition.Guard(ctx) {
-			m.logger.Debug("guard rejected transition", "event", event.ID, "from", transition.From, "to", transition.To)
-			return nil
+	// Try each transition until one's guard passes
+	ctx := m.makeContext(&event)
+	for _, transition := range transitions {
+		// No guard means transition is always allowed
+		if transition.Guard == nil {
+			m.logger.Debug("executing transition (no guard)", "event", event.ID, "from", transition.From, "to", transition.To)
+			return m.executeTransition(transition, &event)
 		}
+
+		// Check guard
+		if transition.Guard(ctx) {
+			m.logger.Debug("executing transition (guard passed)", "event", event.ID, "from", transition.From, "to", transition.To)
+			return m.executeTransition(transition, &event)
+		}
+
+		m.logger.Debug("guard rejected transition", "event", event.ID, "from", transition.From, "to", transition.To)
 	}
 
-	// Execute transition
-	return m.executeTransition(transition, &event)
+	// All guards failed
+	m.logger.Debug("all guards rejected", "event", event.ID, "state", m.currentState)
+	return nil
 }
 
-// findTransition finds a matching transition for the event
-func (m *Machine) findTransition(event Event) *Transition {
+// findAllTransitions finds all matching transitions for the event
+// Returns transitions in priority order: current state, then ancestors, then wildcards
+func (m *Machine) findAllTransitions(event Event) []*Transition {
+	var matches []*Transition
+
 	// Check transitions from current state and ancestors
 	current := m.currentState
 	for current != "" {
 		for i := range m.definition.transitions {
 			t := &m.definition.transitions[i]
-			if t.Event == event.ID && (t.From == current || t.From == WildcardState) {
-				return t
+			if t.Event == event.ID && t.From == current {
+				matches = append(matches, t)
 			}
 		}
 		state := m.definition.states[current]
@@ -261,11 +274,11 @@ func (m *Machine) findTransition(event Event) *Transition {
 	for i := range m.definition.transitions {
 		t := &m.definition.transitions[i]
 		if t.Event == event.ID && t.From == WildcardState {
-			return t
+			matches = append(matches, t)
 		}
 	}
 
-	return nil
+	return matches
 }
 
 // executeTransition performs the state transition
