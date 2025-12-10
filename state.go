@@ -19,6 +19,7 @@ type State struct {
 	Timeout       time.Duration
 	TimeoutEvent  EventID
 	TimeoutAction func(*Context) error // Optional callback to run before sending timeout event
+	TimeoutTarget StateID               // If set, auto-creates transition on timeout (with generated event)
 
 	// Declared timers (for auto-cleanup on state exit)
 	DeclaredTimers []string
@@ -61,6 +62,21 @@ func WithTimeout(duration time.Duration, event EventID, action ...func(*Context)
 	return func(s *State) {
 		s.Timeout = duration
 		s.TimeoutEvent = event
+		if len(action) > 0 {
+			s.TimeoutAction = action[0]
+		}
+	}
+}
+
+// WithTimeoutTransition sets a declarative timeout that automatically transitions to the target state.
+// The transition is auto-created during Build() with a generated internal event.
+// An optional third argument specifies a callback to run before the timeout transition occurs.
+func WithTimeoutTransition(duration time.Duration, target StateID, action ...func(*Context) error) StateOption {
+	return func(s *State) {
+		s.Timeout = duration
+		s.TimeoutTarget = target
+		// Generate internal event name from state ID and target
+		s.TimeoutEvent = EventID("__timeout_" + string(s.ID) + "_to_" + string(target))
 		if len(action) > 0 {
 			s.TimeoutAction = action[0]
 		}

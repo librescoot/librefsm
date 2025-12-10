@@ -759,3 +759,93 @@ func TestEventPayload(t *testing.T) {
 		t.Errorf("expected payload 'test-data', got %q", receivedPayload)
 	}
 }
+
+func TestTimeoutTransition(t *testing.T) {
+	def := NewDefinition().
+		State(stateA,
+			WithTimeoutTransition(50*time.Millisecond, stateB),
+		).
+		State(stateB).
+		Initial(stateA)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	if m.CurrentState() != stateA {
+		t.Errorf("expected initial state %s, got %s", stateA, m.CurrentState())
+	}
+
+	// Wait for timeout transition
+	time.Sleep(100 * time.Millisecond)
+
+	if m.CurrentState() != stateB {
+		t.Errorf("expected state %s after timeout transition, got %s", stateB, m.CurrentState())
+	}
+}
+
+func TestTimeoutTransitionWithCallback(t *testing.T) {
+	var callbackRan bool
+	var callbackRanBeforeTransition bool
+
+	def := NewDefinition().
+		State(stateA,
+			WithTimeoutTransition(50*time.Millisecond, stateB, func(c *Context) error {
+				callbackRan = true
+				callbackRanBeforeTransition = c.CurrentState() == stateA
+				return nil
+			}),
+		).
+		State(stateB).
+		Initial(stateA)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	// Wait for timeout
+	time.Sleep(100 * time.Millisecond)
+
+	if !callbackRan {
+		t.Error("timeout callback should have run")
+	}
+
+	if !callbackRanBeforeTransition {
+		t.Error("timeout callback should run before transition (while still in state A)")
+	}
+
+	if m.CurrentState() != stateB {
+		t.Errorf("expected state %s after timeout transition, got %s", stateB, m.CurrentState())
+	}
+}
+
+func TestTimeoutTransitionUndefinedTarget(t *testing.T) {
+	def := NewDefinition().
+		State(stateA,
+			WithTimeoutTransition(50*time.Millisecond, "nonexistent"),
+		).
+		Initial(stateA)
+
+	_, err := def.Build()
+	if err == nil {
+		t.Error("expected error for undefined timeout target, got nil")
+	}
+}

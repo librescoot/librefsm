@@ -107,6 +107,32 @@ func main() {
 }
 ```
 
+### Simplified Timeout Transitions
+
+Use `WithTimeoutTransition` to automatically create the timeout transition without manually defining the event:
+
+```go
+def := librefsm.NewDefinition().
+    State(StateOff,
+        librefsm.WithOnEnter(func(c *librefsm.Context) error {
+            fmt.Println("Light off")
+            return nil
+        }),
+    ).
+    State(StateOn,
+        // Automatically transitions to StateOff after 5 seconds
+        librefsm.WithTimeoutTransition(5*time.Second, StateOff),
+        librefsm.WithOnEnter(func(c *librefsm.Context) error {
+            fmt.Println("Light on (auto-off in 5s)")
+            return nil
+        }),
+    ).
+    Transition(StateOff, EvToggle, StateOn).
+    Transition(StateOn, EvToggle, StateOff).
+    // No need to manually define the timeout transition
+    Initial(StateOff)
+```
+
 ## Documentation
 
 See [example_test.go](example_test.go) for comprehensive examples including:

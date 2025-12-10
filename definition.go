@@ -174,6 +174,22 @@ func (d *Definition) Build(opts ...MachineOption) (*Machine, error) {
 		return nil, fmt.Errorf("invalid definition: %w", err)
 	}
 
+	// Auto-create transitions for states with TimeoutTarget
+	for id, state := range d.states {
+		if state.TimeoutTarget != "" {
+			// Verify target state exists
+			if _, ok := d.states[state.TimeoutTarget]; !ok {
+				return nil, fmt.Errorf("state %q timeout target %q not defined", id, state.TimeoutTarget)
+			}
+			// Add automatic transition
+			d.transitions = append(d.transitions, Transition{
+				From:  id,
+				Event: state.TimeoutEvent,
+				To:    state.TimeoutTarget,
+			})
+		}
+	}
+
 	m := &Machine{
 		definition:   d,
 		currentState: "",
