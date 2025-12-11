@@ -372,6 +372,12 @@ func (m *Machine) exitToAncestor(from StateID, ancestor StateID) error {
 
 // enterFromAncestor enters states from ancestor down to target
 func (m *Machine) enterFromAncestor(target StateID, ancestor StateID, event *Event) error {
+	// Handle special case: target is the ancestor itself
+	// This happens when transitioning to a parent state
+	if target == ancestor {
+		return m.enterState(target, event)
+	}
+
 	// Build path from ancestor to target
 	path := m.pathFromAncestor(target, ancestor)
 
