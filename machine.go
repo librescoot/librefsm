@@ -75,7 +75,7 @@ func (m *Machine) Start(ctx context.Context) error {
 	m.activeStates = make(map[StateID]StateID)
 
 	// Enter initial state
-	if err := m.enterState(m.definition.initial, nil); err != nil {
+	if err := m.enterState(m.definition.initial, nil, ""); err != nil {
 		return fmt.Errorf("failed to enter initial state: %w", err)
 	}
 
@@ -152,7 +152,7 @@ func (m *Machine) SetState(newState StateID) error {
 	}
 
 	// Enter new state
-	if err := m.enterState(newState, nil); err != nil {
+	if err := m.enterState(newState, nil, fromState); err != nil {
 		return fmt.Errorf("enter state %s: %w", newState, err)
 	}
 
@@ -307,7 +307,7 @@ func (m *Machine) executeTransition(t *Transition, event *Event) error {
 	}
 
 	// Enter states from LCA down to target
-	if err := m.enterFromAncestor(toState, lca, event); err != nil {
+	if err := m.enterFromAncestor(toState, lca, event, fromState); err != nil {
 		return fmt.Errorf("enter failed: %w", err)
 	}
 
@@ -371,21 +371,25 @@ func (m *Machine) exitToAncestor(from StateID, ancestor StateID) error {
 }
 
 // enterFromAncestor enters states from ancestor down to target
-func (m *Machine) enterFromAncestor(target StateID, ancestor StateID, event *Event) error {
+func (m *Machine) enterFromAncestor(target StateID, ancestor StateID, event *Event, fromState StateID) error {
 	// Handle special case: target is the ancestor itself
 	// This happens when transitioning to a parent state
 	if target == ancestor {
-		return m.enterState(target, event)
+		return m.enterState(target, event, fromState)
 	}
 
 	// Build path from ancestor to target
 	path := m.pathFromAncestor(target, ancestor)
 
 	// Enter each state in the path
+	// For the first state, use the fromState parameter
+	// For subsequent states, use the previous state in the path
+	prevState := fromState
 	for _, stateID := range path {
-		if err := m.enterState(stateID, event); err != nil {
+		if err := m.enterState(stateID, event, prevState); err != nil {
 			return err
 		}
+		prevState = stateID
 	}
 
 	return nil
@@ -407,7 +411,7 @@ func (m *Machine) pathFromAncestor(target StateID, ancestor StateID) []StateID {
 }
 
 // enterState enters a state and handles conditions/default children
-func (m *Machine) enterState(id StateID, event *Event) error {
+func (m *Machine) enterState(id StateID, event *Event, fromState StateID) error {
 	state := m.definition.states[id]
 	if state == nil {
 		return fmt.Errorf("state %q not found", id)
@@ -425,6 +429,8 @@ func (m *Machine) enterState(id StateID, event *Event) error {
 	// Execute entry action (for junction, this runs before condition)
 	if state.OnEnter != nil {
 		ctx := m.makeContext(event)
+		ctx.FromState = fromState
+		ctx.ToState = id
 		if err := state.OnEnter(ctx); err != nil {
 			return fmt.Errorf("entry action failed for %q: %w", id, err)
 		}
@@ -440,14 +446,14 @@ func (m *Machine) enterState(id StateID, event *Event) error {
 				if err := m.exitState(id); err != nil {
 					return err
 				}
-				return m.enterState(nextState, event)
+				return m.enterState(nextState, event, id)
 			}
 		}
 	}
 
 	// Auto-enter default child
 	if state.DefaultChild != "" {
-		return m.enterState(state.DefaultChild, event)
+		return m.enterState(state.DefaultChild, event, id)
 	}
 
 	return nil
