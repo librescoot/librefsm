@@ -133,6 +133,30 @@ def := librefsm.NewDefinition().
     Initial(StateOff)
 ```
 
+### Timeout Callbacks with Retry
+
+Timeout callbacks that return an error cause the timer to restart instead of sending the event. This enables retry patterns:
+
+```go
+def := librefsm.NewDefinition().
+    State(StatePolling,
+        librefsm.WithTimeout(400*time.Millisecond, EvPollComplete, func(c *librefsm.Context) error {
+            // Try to read sensor
+            if err := readSensor(); err != nil {
+                // Return error to retry after another 400ms
+                return err
+            }
+            // Return nil to send EvPollComplete and allow transition
+            return nil
+        }),
+    ).
+    State(StateReady).
+    Transition(StatePolling, EvPollComplete, StateReady).
+    Initial(StatePolling)
+```
+
+The timer keeps restarting until the callback succeeds (returns nil), at which point the event is sent.
+
 ## Documentation
 
 See [example_test.go](example_test.go) for comprehensive examples including:
