@@ -37,7 +37,6 @@ func (m *Machine) startTimerInternalWithAction(name string, duration time.Durati
 		entry, ok := m.timers[name]
 		if ok {
 			timerAction := entry.action
-			timerDuration := entry.duration
 			delete(m.timers, name)
 			m.timerMu.Unlock()
 
@@ -47,10 +46,7 @@ func (m *Machine) startTimerInternalWithAction(name string, duration time.Durati
 			if timerAction != nil {
 				ctx := m.makeContext(nil)
 				if err := timerAction(ctx); err != nil {
-					// Action failed - restart timer for retry instead of sending event
-					m.logger.Debug("timer action failed, restarting timer", "name", name, "error", err)
-					m.startTimerInternalWithAction(name, timerDuration, event, scope, owner, timerAction)
-					return
+					m.logger.Error("timer action failed", "name", name, "error", err)
 				}
 			}
 

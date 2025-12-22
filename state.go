@@ -58,8 +58,6 @@ func WithOnExit(fn func(*Context) error) StateOption {
 
 // WithTimeout sets a declarative timeout that auto-starts on entry.
 // An optional third argument specifies a callback to run before the timeout event is sent.
-// If the callback returns an error, the timer restarts instead of sending the event,
-// enabling retry patterns. The event is only sent when the callback returns nil.
 func WithTimeout(duration time.Duration, event EventID, action ...func(*Context) error) StateOption {
 	return func(s *State) {
 		s.Timeout = duration
@@ -73,8 +71,6 @@ func WithTimeout(duration time.Duration, event EventID, action ...func(*Context)
 // WithTimeoutTransition sets a declarative timeout that automatically transitions to the target state.
 // The transition is auto-created during Build() with a generated internal event.
 // An optional third argument specifies a callback to run before the timeout transition occurs.
-// If the callback returns an error, the timer restarts instead of triggering the transition,
-// enabling retry patterns. The transition only occurs when the callback returns nil.
 func WithTimeoutTransition(duration time.Duration, target StateID, action ...func(*Context) error) StateOption {
 	return func(s *State) {
 		s.Timeout = duration

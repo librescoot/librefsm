@@ -2,7 +2,6 @@ package librefsm
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -912,91 +911,5 @@ func TestTimeoutTransitionUndefinedTarget(t *testing.T) {
 	_, err := def.Build()
 	if err == nil {
 		t.Error("expected error for undefined timeout target, got nil")
-	}
-}
-
-func TestTimeoutCallbackRetry(t *testing.T) {
-	var callCount int32
-	failUntil := int32(3) // Fail first 2 attempts, succeed on 3rd
-
-	def := NewDefinition().
-		State(stateA,
-			WithTimeout(30*time.Millisecond, evTimeout, func(c *Context) error {
-				count := atomic.AddInt32(&callCount, 1)
-				if count < failUntil {
-					return fmt.Errorf("simulated failure %d", count)
-				}
-				return nil
-			}),
-		).
-		State(stateB).
-		Transition(stateA, evTimeout, stateB).
-		Initial(stateA)
-
-	m, err := def.Build()
-	if err != nil {
-		t.Fatalf("build failed: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := m.Start(ctx); err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
-	defer m.Stop()
-
-	// Wait for retries and eventual success (3 attempts * 30ms + buffer)
-	time.Sleep(150 * time.Millisecond)
-
-	if atomic.LoadInt32(&callCount) < failUntil {
-		t.Errorf("expected at least %d callback calls, got %d", failUntil, callCount)
-	}
-
-	if m.CurrentState() != stateB {
-		t.Errorf("expected state %s after successful callback, got %s", stateB, m.CurrentState())
-	}
-}
-
-func TestTimeoutCallbackRetryStaysInState(t *testing.T) {
-	var callCount int32
-
-	def := NewDefinition().
-		State(stateA,
-			WithTimeout(20*time.Millisecond, evTimeout, func(c *Context) error {
-				atomic.AddInt32(&callCount, 1)
-				// Always fail - should keep retrying
-				return fmt.Errorf("always fail")
-			}),
-		).
-		State(stateB).
-		Transition(stateA, evTimeout, stateB).
-		Initial(stateA)
-
-	m, err := def.Build()
-	if err != nil {
-		t.Fatalf("build failed: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := m.Start(ctx); err != nil {
-		t.Fatalf("start failed: %v", err)
-	}
-	defer m.Stop()
-
-	// Wait for multiple retry attempts
-	time.Sleep(100 * time.Millisecond)
-
-	// Should have retried multiple times
-	count := atomic.LoadInt32(&callCount)
-	if count < 3 {
-		t.Errorf("expected at least 3 retry attempts, got %d", count)
-	}
-
-	// Should still be in state A (never succeeded)
-	if m.CurrentState() != stateA {
-		t.Errorf("expected to stay in state %s during retries, got %s", stateA, m.CurrentState())
 	}
 }
