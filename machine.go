@@ -101,12 +101,14 @@ func (m *Machine) Stop() error {
 	return nil
 }
 
-// Send queues an event for asynchronous processing
+// Send queues an event for non-blocking asynchronous processing.
+// If the event queue is full, the event is dropped and an error is logged.
+// The queue size defaults to 100 and can be configured with WithEventQueueSize.
 func (m *Machine) Send(event Event) {
 	select {
 	case m.events <- event:
 	default:
-		m.logger.Warn("event queue full, dropping event", "event", event.ID)
+		m.logger.Error("event queue full, dropping event", "event", event.ID)
 	}
 }
 
