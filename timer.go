@@ -116,11 +116,12 @@ func (m *Machine) resetTimer(name string, duration time.Duration) {
 	event := entry.event
 	scope := entry.scope
 	owner := entry.ownerState
+	action := entry.action
 	entry.timer.Stop()
 	delete(m.timers, name)
 	m.timerMu.Unlock()
 
-	m.startTimerInternal(name, duration, event, scope, owner)
+	m.startTimerInternalWithAction(name, duration, event, scope, owner, action)
 }
 
 // cleanupTimersForState cancels all state-scoped timers owned by the given state
