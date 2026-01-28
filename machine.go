@@ -30,6 +30,8 @@ type Machine struct {
 
 	// Active states in hierarchy (for parallel states, future use)
 	activeStates map[StateID]StateID // Parent -> active child
+
+	loopDone chan struct{} // Closed when the event loop goroutine exits
 }
 
 // MachineOption is a functional option for configuring a Machine
@@ -74,6 +76,8 @@ func (m *Machine) Start(ctx context.Context) error {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	m.activeStates = make(map[StateID]StateID)
 
+	m.loopDone = make(chan struct{})
+
 	// Enter initial state
 	if err := m.enterState(m.definition.initial, nil, ""); err != nil {
 		return fmt.Errorf("failed to enter initial state: %w", err)
@@ -85,10 +89,13 @@ func (m *Machine) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the machine
+// Stop gracefully shuts down the machine and waits for the event loop to exit.
 func (m *Machine) Stop() error {
 	if m.cancel != nil {
 		m.cancel()
+	}
+	if m.loopDone != nil {
+		<-m.loopDone
 	}
 	m.StopAllTimers()
 	return nil
@@ -201,6 +208,7 @@ func (m *Machine) isInStateInternal(id StateID) bool {
 
 // eventLoop processes events from the queue
 func (m *Machine) eventLoop() {
+	defer close(m.loopDone)
 	for {
 		select {
 		case <-m.ctx.Done():
