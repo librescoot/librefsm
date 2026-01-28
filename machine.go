@@ -522,6 +522,7 @@ func (m *Machine) makeContext(event *Event) *Context {
 		Event:  event,
 		Data:   m.data,
 		Logger: m.logger,
+		state:  m.currentState,
 	}
 }
 

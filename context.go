@@ -13,6 +13,8 @@ type Context struct {
 	ToState   StateID // State we're transitioning to
 	Data      any     // User-provided application data
 	Logger    *slog.Logger
+
+	state StateID // Snapshot of currentState at context creation (no lock needed)
 }
 
 // CurrentState returns the current active state
@@ -33,7 +35,7 @@ func (c *Context) StartTimer(name string, duration time.Duration, event Event, a
 	if len(action) > 0 {
 		cb = action[0]
 	}
-	c.FSM.startTimerInternalWithAction(name, duration, event, TimerScopeState, c.FSM.currentState, cb)
+	c.FSM.startTimerInternalWithAction(name, duration, event, TimerScopeState, c.state, cb)
 }
 
 // StartTimerGlobal starts a timer that won't be auto-cancelled on state exit
