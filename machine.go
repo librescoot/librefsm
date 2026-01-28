@@ -425,6 +425,10 @@ func (m *Machine) pathFromAncestor(target StateID, ancestor StateID) []StateID {
 
 // enterState enters a state and handles conditions/default children
 func (m *Machine) enterState(id StateID, event *Event, fromState StateID) error {
+	return m.enterStateWithVisited(id, event, fromState, nil)
+}
+
+func (m *Machine) enterStateWithVisited(id StateID, event *Event, fromState StateID, visited map[StateID]bool) error {
 	state := m.definition.states[id]
 	if state == nil {
 		return fmt.Errorf("state %q not found", id)
@@ -455,18 +459,25 @@ func (m *Machine) enterState(id StateID, event *Event, fromState StateID) error 
 			ctx := m.makeContext(event)
 			nextState := state.Condition(ctx)
 			if nextState != "" {
-				// Exit this state and enter the next
+				if visited == nil {
+					visited = make(map[StateID]bool)
+				}
+				if visited[id] {
+					return fmt.Errorf("condition state cycle detected at %q", id)
+				}
+				visited[id] = true
+
 				if err := m.exitState(id); err != nil {
 					return err
 				}
-				return m.enterState(nextState, event, id)
+				return m.enterStateWithVisited(nextState, event, id, visited)
 			}
 		}
 	}
 
 	// Auto-enter default child
 	if state.DefaultChild != "" {
-		return m.enterState(state.DefaultChild, event, id)
+		return m.enterStateWithVisited(state.DefaultChild, event, id, visited)
 	}
 
 	return nil
