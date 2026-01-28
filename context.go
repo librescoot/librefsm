@@ -56,7 +56,16 @@ func (c *Context) TimerActive(name string) bool {
 	return c.FSM.TimerActive(name)
 }
 
-// Send queues an event for asynchronous processing
+// Send queues an event for asynchronous processing.
+// This is the correct way to dispatch events from within callbacks.
 func (c *Context) Send(event Event) {
 	c.FSM.Send(event)
+}
+
+// SendSync panics when called from a callback context.
+// The event loop is single-threaded; it cannot process a new event while a
+// callback is executing, so a synchronous send would deadlock.
+// Use ctx.Send() to dispatch events asynchronously from callbacks instead.
+func (c *Context) SendSync(event Event) error {
+	panic("librefsm: SendSync called from within FSM callback; use ctx.Send() for async event dispatch")
 }

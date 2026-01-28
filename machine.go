@@ -103,7 +103,15 @@ func (m *Machine) Send(event Event) {
 	}
 }
 
-// SendSync sends an event and waits for it to be processed
+// SendSync sends an event and waits for it to be processed.
+// It blocks until the event loop processes the event and returns any error.
+// Returns the FSM context error if the machine is stopped while waiting.
+//
+// SendSync must NOT be called from within FSM callbacks (OnEnter, OnExit,
+// Guard, Action, Condition). The event loop is single-threaded and cannot
+// process new events while a callback is executing, so SendSync from a
+// callback will deadlock. Use ctx.Send() for async event dispatch from
+// callbacks instead.
 func (m *Machine) SendSync(event Event) error {
 	done := make(chan error, 1)
 	wrapper := Event{
@@ -114,7 +122,12 @@ func (m *Machine) SendSync(event Event) error {
 		},
 	}
 	m.Send(wrapper)
-	return <-done
+	select {
+	case err := <-done:
+		return err
+	case <-m.ctx.Done():
+		return m.ctx.Err()
+	}
 }
 
 type syncEventPayload struct {
