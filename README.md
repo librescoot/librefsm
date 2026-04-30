@@ -2,9 +2,11 @@
 
 A lightweight, hierarchical finite state machine library for Go.
 
+Part of the [Librescoot](https://librescoot.org/) open-source platform.
+
 ## Overview
 
-librefsm is a flexible FSM library designed for building robust state machines with support for hierarchical states, guards, timers, and conditional transitions. Originally developed for the LibreScoot project to manage vehicle state logic.
+librefsm is a flexible FSM library designed for building robust state machines with support for hierarchical states, guards, timers, and conditional transitions. Originally developed for the Librescoot project to manage vehicle state logic.
 
 ## Features
 
@@ -148,7 +150,14 @@ go test -v
 
 ## License
 
-This work is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+This project is dual-licensed. The source code is available under the
+[GNU Affero General Public License v3.0][agpl-3.0].
+The maintainers reserve the right to grant separate licenses for commercial distribution; please contact the maintainers to discuss commercial licensing.
+
+[![AGPL v3][agpl-image]][agpl-3.0]
+
+[agpl-3.0]: https://www.gnu.org/licenses/agpl-3.0.en.html
+[agpl-image]: https://www.gnu.org/graphics/agplv3-88x31.png
 
 ## Contributing
 
@@ -156,4 +165,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-Part of the [LibreScoot](https://github.com/librescoot/librescoot) project
+Part of the [Librescoot](https://github.com/librescoot/librescoot) project
