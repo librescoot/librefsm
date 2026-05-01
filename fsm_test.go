@@ -913,3 +913,100 @@ func TestTimeoutTransitionUndefinedTarget(t *testing.T) {
 		t.Error("expected error for undefined timeout target, got nil")
 	}
 }
+
+func TestBlockedEvents(t *testing.T) {
+	var entryCount, exitCount int32
+
+	def := NewDefinition().
+		State(stateA,
+			WithBlockedEvents(evGo),
+			WithOnEnter(func(c *Context) error {
+				atomic.AddInt32(&entryCount, 1)
+				return nil
+			}),
+			WithOnExit(func(c *Context) error {
+				atomic.AddInt32(&exitCount, 1)
+				return nil
+			}),
+		).
+		State(stateB).
+		State(stateC).
+		Transition(stateA, evGo, stateB).      // Should be pre-empted by BlockedEvents
+		AnyStateTransition(evGo, stateC).      // Wildcard should also be pre-empted
+		Transition(stateA, evNext, stateB).    // Unblocked transition still works
+		Initial(stateA)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	// Sending the blocked event must NOT transition or fire exit.
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if m.CurrentState() != stateA {
+		t.Errorf("blocked event should not transition; got state %s", m.CurrentState())
+	}
+	if atomic.LoadInt32(&exitCount) != 0 {
+		t.Errorf("blocked event should not fire OnExit; exitCount=%d", exitCount)
+	}
+
+	// An unblocked event in the same state still transitions.
+	if err := m.SendSync(Event{ID: evNext}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if m.CurrentState() != stateB {
+		t.Errorf("unblocked event should transition; got state %s", m.CurrentState())
+	}
+	if atomic.LoadInt32(&exitCount) != 1 {
+		t.Errorf("unblocked event should fire OnExit; exitCount=%d", exitCount)
+	}
+}
+
+// TestBlockedEventsInheritedFromParent verifies that BlockedEvents declared
+// on a parent state apply to all descendants — useful for grouping inputs
+// that should be ignored across a whole hierarchical region.
+func TestBlockedEventsInheritedFromParent(t *testing.T) {
+	def := NewDefinition().
+		State(stateParent,
+			WithBlockedEvents(evGo),
+			WithDefaultChild(stateChild1),
+		).
+		State(stateChild1, WithParent(stateParent)).
+		State(stateB).
+		Transition(stateChild1, evGo, stateB).
+		Initial(stateParent)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	// We auto-entered the default child of stateParent.
+	if m.CurrentState() != stateChild1 {
+		t.Fatalf("expected state %s, got %s", stateChild1, m.CurrentState())
+	}
+
+	// stateParent blocks evGo, so the child's transition is pre-empted.
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if m.CurrentState() != stateChild1 {
+		t.Errorf("parent BlockedEvents should pre-empt child transition; got %s", m.CurrentState())
+	}
+}

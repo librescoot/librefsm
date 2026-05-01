@@ -23,6 +23,13 @@ type State struct {
 
 	// Declared timers (for auto-cleanup on state exit)
 	DeclaredTimers []string
+
+	// Events that are silently dropped while this state (or any descendant)
+	// is active. Use this for inputs that should be observed at the I/O
+	// layer but must not drive the FSM in this state — e.g. hop-on mode,
+	// where kickstand/brake/seatbox events publish to Redis but must not
+	// transition or fire callbacks.
+	BlockedEvents []EventID
 }
 
 // StateOption is a functional option for configuring a State
@@ -87,5 +94,15 @@ func WithTimeoutTransition(duration time.Duration, target StateID, action ...fun
 func WithTimer(name string) StateOption {
 	return func(s *State) {
 		s.DeclaredTimers = append(s.DeclaredTimers, name)
+	}
+}
+
+// WithBlockedEvents declares events that the machine drops silently while
+// this state (or any descendant) is active. Blocked events are checked
+// before transition lookup; wildcard and ancestor transitions are also
+// pre-empted.
+func WithBlockedEvents(events ...EventID) StateOption {
+	return func(s *State) {
+		s.BlockedEvents = append(s.BlockedEvents, events...)
 	}
 }

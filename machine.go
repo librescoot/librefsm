@@ -154,6 +154,12 @@ func (m *Machine) CurrentState() StateID {
 // SetState forces a direct state change, bypassing normal event-driven transitions.
 // This is useful for hybrid migrations where legacy code needs to set state directly.
 // It properly exits the current state and enters the new state, running callbacks.
+//
+// SetState honors the state hierarchy: if the source and target share a
+// common ancestor, only the states between current and the LCA are exited
+// and only the states between the LCA and target are entered (no spurious
+// parent re-entry). If there's no current state (initial setup), the full
+// ancestor chain of the target is entered.
 func (m *Machine) SetState(newState StateID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -168,13 +174,23 @@ func (m *Machine) SetState(newState StateID) error {
 
 	fromState := m.currentState
 
-	// Exit current state
-	if err := m.exitState(m.currentState); err != nil {
-		return fmt.Errorf("exit state %s: %w", m.currentState, err)
+	var lca StateID
+	if fromState == "" {
+		// No prior state — enter the full ancestor chain from root down.
+		lca = ""
+	} else {
+		lca = m.findLCA(fromState, newState)
 	}
 
-	// Enter new state
-	if err := m.enterState(newState, nil, fromState); err != nil {
+	// Exit current up to (but not including) the LCA.
+	if fromState != "" {
+		if err := m.exitToAncestor(fromState, lca); err != nil {
+			return fmt.Errorf("exit state %s: %w", fromState, err)
+		}
+	}
+
+	// Enter from LCA down to the target (parents fire OnEnter).
+	if err := m.enterFromAncestor(newState, lca, nil, fromState); err != nil {
 		return fmt.Errorf("enter state %s: %w", newState, err)
 	}
 
@@ -242,6 +258,12 @@ func (m *Machine) processEvent(event Event) error {
 
 	m.logger.Debug("processing event", "event", event.ID, "state", m.currentState)
 
+	// Pre-empt blocked events declared by the current state or any ancestor.
+	if m.isEventBlocked(event.ID) {
+		m.logger.Debug("event blocked by state", "event", event.ID, "state", m.currentState)
+		return nil
+	}
+
 	// Find all matching transitions
 	transitions := m.findAllTransitions(event)
 	if len(transitions) == 0 {
@@ -270,6 +292,25 @@ func (m *Machine) processEvent(event Event) error {
 	// All guards failed
 	m.logger.Debug("all guards rejected", "event", event.ID, "state", m.currentState)
 	return nil
+}
+
+// isEventBlocked reports whether the current leaf state or any ancestor
+// declared this event in its BlockedEvents list.
+func (m *Machine) isEventBlocked(id EventID) bool {
+	current := m.currentState
+	for current != "" {
+		state := m.definition.states[current]
+		if state == nil {
+			break
+		}
+		for _, blocked := range state.BlockedEvents {
+			if blocked == id {
+				return true
+			}
+		}
+		current = state.Parent
+	}
+	return false
 }
 
 // findAllTransitions finds all matching transitions for the event
@@ -393,7 +434,14 @@ func (m *Machine) exitToAncestor(from StateID, ancestor StateID) error {
 	return nil
 }
 
-// enterFromAncestor enters states from ancestor down to target
+// enterFromAncestor enters states from ancestor down to target.
+//
+// All OnEnter callbacks along the chain receive the original fromState as
+// their ctx.FromState — that is, the state the machine was in *before* the
+// transition started, not the immediate ancestor entered just before. This
+// matches how hierarchical statecharts are typically reasoned about: a leaf
+// state's OnEnter cares about "where did we come from", not "which of my
+// own ancestors fired just now".
 func (m *Machine) enterFromAncestor(target StateID, ancestor StateID, event *Event, fromState StateID) error {
 	// Handle special case: target is the ancestor itself
 	// This happens when transitioning to a parent state
@@ -404,15 +452,12 @@ func (m *Machine) enterFromAncestor(target StateID, ancestor StateID, event *Eve
 	// Build path from ancestor to target
 	path := m.pathFromAncestor(target, ancestor)
 
-	// Enter each state in the path
-	// For the first state, use the fromState parameter
-	// For subsequent states, use the previous state in the path
-	prevState := fromState
+	// Enter each state in the path; every callback sees the original
+	// fromState (the leaf state we transitioned from).
 	for _, stateID := range path {
-		if err := m.enterState(stateID, event, prevState); err != nil {
+		if err := m.enterState(stateID, event, fromState); err != nil {
 			return err
 		}
-		prevState = stateID
 	}
 
 	return nil
