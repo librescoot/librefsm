@@ -2,6 +2,7 @@ package librefsm
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1008,5 +1009,93 @@ func TestBlockedEventsInheritedFromParent(t *testing.T) {
 	}
 	if m.CurrentState() != stateChild1 {
 		t.Errorf("parent BlockedEvents should pre-empt child transition; got %s", m.CurrentState())
+	}
+}
+
+// An entry action is a side effect, not a veto: gating is what guards are
+// for. So a failing OnEnter must still leave the machine in the target state
+// and must still notify observers, or anything mirroring the state (a Redis
+// hash, a dashboard) silently diverges from the machine.
+func TestStateChangeCallbackFiresWhenEntryActionFails(t *testing.T) {
+	var changes [][2]StateID
+	entryErr := errors.New("entry action failed")
+
+	def := NewDefinition().
+		State(stateA).
+		State(stateB, WithOnEnter(func(c *Context) error { return entryErr })).
+		Transition(stateA, evGo, stateB).
+		Initial(stateA)
+
+	m, err := def.Build(
+		WithStateChangeCallback(func(from, to StateID) {
+			changes = append(changes, [2]StateID{from, to})
+		}),
+	)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	sendErr := m.SendSync(Event{ID: evGo})
+
+	if sendErr == nil {
+		t.Error("SendSync returned nil; the entry action error must still reach the caller")
+	} else if !errors.Is(sendErr, entryErr) {
+		t.Errorf("SendSync error = %v; want it to wrap the entry action error", sendErr)
+	}
+
+	if got := m.CurrentState(); got != stateB {
+		t.Errorf("CurrentState() = %q, want %q", got, stateB)
+	}
+
+	if len(changes) != 1 {
+		t.Fatalf("callback fired %d times, want 1 (state changed, so observers must be told)", len(changes))
+	}
+	if changes[0] != [2]StateID{stateA, stateB} {
+		t.Errorf("callback got %v, want [%s %s]", changes[0], stateA, stateB)
+	}
+}
+
+func TestSetStateCallbackFiresWhenEntryActionFails(t *testing.T) {
+	var changes [][2]StateID
+	entryErr := errors.New("entry action failed")
+
+	def := NewDefinition().
+		State(stateA).
+		State(stateB, WithOnEnter(func(c *Context) error { return entryErr })).
+		Initial(stateA)
+
+	m, err := def.Build(
+		WithStateChangeCallback(func(from, to StateID) {
+			changes = append(changes, [2]StateID{from, to})
+		}),
+	)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	setErr := m.SetState(stateB)
+
+	if setErr == nil || !errors.Is(setErr, entryErr) {
+		t.Errorf("SetState error = %v; want it to wrap the entry action error", setErr)
+	}
+	if got := m.CurrentState(); got != stateB {
+		t.Errorf("CurrentState() = %q, want %q", got, stateB)
+	}
+	if len(changes) != 1 || changes[0] != [2]StateID{stateA, stateB} {
+		t.Errorf("callback changes = %v, want one [%s %s]", changes, stateA, stateB)
 	}
 }

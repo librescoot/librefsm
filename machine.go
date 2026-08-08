@@ -190,15 +190,20 @@ func (m *Machine) SetState(newState StateID) error {
 	}
 
 	// Enter from LCA down to the target (parents fire OnEnter).
-	if err := m.enterFromAncestor(newState, lca, nil, fromState); err != nil {
-		return fmt.Errorf("enter state %s: %w", newState, err)
-	}
+	//
+	// A failing entry action does not undo the transition: entry actions are
+	// side effects, and gating belongs to guards. So notify before returning
+	// the error, or a failed side effect would leave every observer believing
+	// the machine is still in the state it has already left.
+	enterErr := m.enterFromAncestor(newState, lca, nil, fromState)
 
-	// Notify callback
 	if m.stateChangeCallback != nil {
 		m.stateChangeCallback(fromState, m.currentState)
 	}
 
+	if enterErr != nil {
+		return fmt.Errorf("enter state %s: %w", newState, enterErr)
+	}
 	return nil
 }
 
@@ -370,16 +375,21 @@ func (m *Machine) executeTransition(t *Transition, event *Event) error {
 		}
 	}
 
-	// Enter states from LCA down to target
-	if err := m.enterFromAncestor(toState, lca, event, fromState); err != nil {
-		return fmt.Errorf("enter failed: %w", err)
-	}
+	// Enter states from LCA down to target.
+	//
+	// A failing entry action does not undo the transition: entry actions are
+	// side effects, and gating belongs to guards. So notify before returning
+	// the error, or a failed side effect would leave every observer believing
+	// the machine is still in the state it has already left.
+	enterErr := m.enterFromAncestor(toState, lca, event, fromState)
 
-	// Notify callback
 	if m.stateChangeCallback != nil && fromState != m.currentState {
 		m.stateChangeCallback(fromState, m.currentState)
 	}
 
+	if enterErr != nil {
+		return fmt.Errorf("enter failed: %w", enterErr)
+	}
 	return nil
 }
 
