@@ -54,9 +54,12 @@ func Example_trafficLight() {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	m.Start(ctx)
+	if err := m.Start(ctx); err != nil {
+		fmt.Println("start failed:", err)
+		return
+	}
 	<-ctx.Done()
-	m.Stop()
+	_ = m.Stop()
 
 	// Output:
 	// 🔴 RED - Stop
