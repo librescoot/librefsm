@@ -169,34 +169,47 @@ func Example_vehicleFSM() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.Start(ctx)
+	if err := m.Start(ctx); err != nil {
+		fmt.Println("start failed:", err)
+		return
+	}
 
 	// Simulate vehicle operations
 	time.Sleep(10 * time.Millisecond)
 	fmt.Printf("State: %s\n", m.CurrentState())
 
 	// Unlock
-	m.SendSync(librefsm.Event{ID: evUnlock})
+	if err := m.SendSync(librefsm.Event{ID: evUnlock}); err != nil {
+		panic(err)
+	}
 	fmt.Printf("State: %s\n", m.CurrentState())
 
 	// Try to drive (will fail - kickstand down)
-	m.SendSync(librefsm.Event{ID: evGoToDrive})
+	if err := m.SendSync(librefsm.Event{ID: evGoToDrive}); err != nil {
+		panic(err)
+	}
 	fmt.Printf("State: %s (kickstand down)\n", m.CurrentState())
 
 	// Raise kickstand and try again
 	vehicle.KickstandUp = true
-	m.SendSync(librefsm.Event{ID: evGoToDrive})
+	if err := m.SendSync(librefsm.Event{ID: evGoToDrive}); err != nil {
+		panic(err)
+	}
 	fmt.Printf("State: %s\n", m.CurrentState())
 
 	// Park and lock
-	m.SendSync(librefsm.Event{ID: evGoToPark})
-	m.SendSync(librefsm.Event{ID: evLock})
+	if err := m.SendSync(librefsm.Event{ID: evGoToPark}); err != nil {
+		panic(err)
+	}
+	if err := m.SendSync(librefsm.Event{ID: evLock}); err != nil {
+		panic(err)
+	}
 
 	// Wait for shutdown
 	time.Sleep(150 * time.Millisecond)
 	fmt.Printf("State: %s\n", m.CurrentState())
 
-	m.Stop()
+	_ = m.Stop()
 
 	// Output:
 	// → Initializing...

@@ -147,14 +147,18 @@ func TestGuard(t *testing.T) {
 
 	// Guard blocks transition
 	allowed = false
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateA {
 		t.Errorf("guard should have blocked transition")
 	}
 
 	// Guard allows transition
 	allowed = true
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateB {
 		t.Errorf("guard should have allowed transition")
 	}
@@ -199,7 +203,9 @@ func TestGuardFallthrough(t *testing.T) {
 	// Both guards block - no transition
 	option1Allowed = false
 	option2Allowed = false
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateA {
 		t.Errorf("both guards blocked, should stay in stateA, got %v", m.CurrentState())
 	}
@@ -207,18 +213,24 @@ func TestGuardFallthrough(t *testing.T) {
 	// First guard blocks, second allows - should take second transition (FALLTHROUGH!)
 	option1Allowed = false
 	option2Allowed = true
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateC {
 		t.Errorf("second guard allowed (fallthrough), should be in stateC, got %v", m.CurrentState())
 	}
 
 	// Reset to stateA
-	m.SendSync(Event{ID: evBack})
+	if err := m.SendSync(Event{ID: evBack}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	// First guard allows - should take first transition (doesn't try second)
 	option1Allowed = true
 	option2Allowed = false
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateB {
 		t.Errorf("first guard allowed, should be in stateB, got %v", m.CurrentState())
 	}
@@ -251,7 +263,9 @@ func TestTransitionAction(t *testing.T) {
 	}
 	defer m.Stop()
 
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	if actionData != "executed" {
 		t.Errorf("action was not executed")
@@ -320,7 +334,9 @@ func TestHierarchicalStates(t *testing.T) {
 
 	// Transition within parent (child1 -> child2)
 	entries = nil
-	m.SendSync(Event{ID: evNext})
+	if err := m.SendSync(Event{ID: evNext}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	if m.CurrentState() != stateChild2 {
 		t.Errorf("expected current state %s, got %s", stateChild2, m.CurrentState())
@@ -365,7 +381,9 @@ func TestConditionState(t *testing.T) {
 
 	// Condition routes to C
 	goToB = false
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateC {
 		t.Errorf("expected state %s, got %s", stateC, m.CurrentState())
 	}
@@ -400,7 +418,9 @@ func TestJunctionState(t *testing.T) {
 	}
 	defer m.Stop()
 
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	// Junction entry action should have run
 	if !actionRan {
@@ -608,7 +628,9 @@ func TestTimerCancelOnStateExit(t *testing.T) {
 	defer m.Stop()
 
 	// Exit state A before timer fires
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	if m.CurrentState() != stateB {
 		t.Errorf("expected state %s, got %s", stateB, m.CurrentState())
@@ -686,8 +708,12 @@ func TestStateChangeCallback(t *testing.T) {
 	}
 	defer m.Stop()
 
-	m.SendSync(Event{ID: evGo})
-	m.SendSync(Event{ID: evNext})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if err := m.SendSync(Event{ID: evNext}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	if len(changes) != 2 {
 		t.Errorf("expected 2 changes, got %d", len(changes))
@@ -725,13 +751,17 @@ func TestWildcardTransition(t *testing.T) {
 	defer m.Stop()
 
 	// Go to B first
-	m.SendSync(Event{ID: evGo})
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateB {
 		t.Errorf("expected state %s, got %s", stateB, m.CurrentState())
 	}
 
 	// Wildcard transition from B to C
-	m.SendSync(Event{ID: evDone})
+	if err := m.SendSync(Event{ID: evDone}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 	if m.CurrentState() != stateC {
 		t.Errorf("expected state %s, got %s", stateC, m.CurrentState())
 	}
@@ -818,7 +848,9 @@ func TestEventPayload(t *testing.T) {
 	}
 	defer m.Stop()
 
-	m.SendSync(Event{ID: evGo, Payload: "test-data"})
+	if err := m.SendSync(Event{ID: evGo, Payload: "test-data"}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
 
 	if receivedPayload != "test-data" {
 		t.Errorf("expected payload 'test-data', got %q", receivedPayload)
