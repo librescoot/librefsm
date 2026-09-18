@@ -10,16 +10,16 @@ import (
 
 // Test states
 const (
-	stateInit    StateID = "init"
-	stateA       StateID = "a"
-	stateB       StateID = "b"
-	stateC       StateID = "c"
-	stateParent  StateID = "parent"
-	stateChild1  StateID = "child1"
-	stateChild2  StateID = "child2"
-	stateCond    StateID = "condition"
-	stateJunc    StateID = "junction"
-	stateFinal   StateID = "final"
+	stateInit   StateID = "init"
+	stateA      StateID = "a"
+	stateB      StateID = "b"
+	stateC      StateID = "c"
+	stateParent StateID = "parent"
+	stateChild1 StateID = "child1"
+	stateChild2 StateID = "child2"
+	stateCond   StateID = "condition"
+	stateJunc   StateID = "junction"
+	stateFinal  StateID = "final"
 )
 
 // Test events
@@ -964,9 +964,9 @@ func TestBlockedEvents(t *testing.T) {
 		).
 		State(stateB).
 		State(stateC).
-		Transition(stateA, evGo, stateB).      // Should be pre-empted by BlockedEvents
-		AnyStateTransition(evGo, stateC).      // Wildcard should also be pre-empted
-		Transition(stateA, evNext, stateB).    // Unblocked transition still works
+		Transition(stateA, evGo, stateB).   // Should be pre-empted by BlockedEvents
+		AnyStateTransition(evGo, stateC).   // Wildcard should also be pre-empted
+		Transition(stateA, evNext, stateB). // Unblocked transition still works
 		Initial(stateA)
 
 	m, err := def.Build()
@@ -1129,5 +1129,100 @@ func TestSetStateCallbackFiresWhenEntryActionFails(t *testing.T) {
 	}
 	if len(changes) != 1 || changes[0] != [2]StateID{stateA, stateB} {
 		t.Errorf("callback changes = %v, want one [%s %s]", changes, stateA, stateB)
+	}
+}
+
+// Entering an explicit child from outside the parent group must run that
+// child's OnEnter exactly once. enterFromAncestor walks the chain parent ->
+// child, and entering the parent already resolves its default child, so a
+// child that is also the default was entered twice.
+func TestEnterDefaultChildFromOutsideGroupOnce(t *testing.T) {
+	var entries []StateID
+
+	def := NewDefinition().
+		State(stateParent, WithDefaultChild(stateChild1)).
+		State(stateChild1, WithParent(stateParent),
+			WithOnEnter(func(c *Context) error {
+				entries = append(entries, stateChild1)
+				return nil
+			}),
+		).
+		State(stateChild2, WithParent(stateParent),
+			WithOnEnter(func(c *Context) error {
+				entries = append(entries, stateChild2)
+				return nil
+			}),
+		).
+		State(stateB).
+		Transition(stateB, evGo, stateChild1).
+		Transition(stateB, evNext, stateChild2).
+		Initial(stateB)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	if err := m.SendSync(Event{ID: evGo}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if got := m.CurrentState(); got != stateChild1 {
+		t.Fatalf("CurrentState() = %q, want %q", got, stateChild1)
+	}
+	if len(entries) != 1 || entries[0] != stateChild1 {
+		t.Errorf("child entries = %v, want exactly [%s]", entries, stateChild1)
+	}
+}
+
+// Entering a non-default child directly must not run the default child's
+// OnEnter on the way past the parent.
+func TestEnterNonDefaultChildFromOutsideGroupSkipsDefault(t *testing.T) {
+	var entries []StateID
+
+	def := NewDefinition().
+		State(stateParent, WithDefaultChild(stateChild1)).
+		State(stateChild1, WithParent(stateParent),
+			WithOnEnter(func(c *Context) error {
+				entries = append(entries, stateChild1)
+				return nil
+			}),
+		).
+		State(stateChild2, WithParent(stateParent),
+			WithOnEnter(func(c *Context) error {
+				entries = append(entries, stateChild2)
+				return nil
+			}),
+		).
+		State(stateB).
+		Transition(stateB, evNext, stateChild2).
+		Initial(stateB)
+
+	m, err := def.Build()
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop()
+
+	if err := m.SendSync(Event{ID: evNext}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if got := m.CurrentState(); got != stateChild2 {
+		t.Fatalf("CurrentState() = %q, want %q", got, stateChild2)
+	}
+	if len(entries) != 1 || entries[0] != stateChild2 {
+		t.Errorf("child entries = %v, want exactly [%s] with no %s", entries, stateChild2, stateChild1)
 	}
 }

@@ -463,9 +463,15 @@ func (m *Machine) enterFromAncestor(target StateID, ancestor StateID, event *Eve
 	path := m.pathFromAncestor(target, ancestor)
 
 	// Enter each state in the path; every callback sees the original
-	// fromState (the leaf state we transitioned from).
-	for _, stateID := range path {
-		if err := m.enterState(stateID, event, fromState); err != nil {
+	// fromState (the leaf state we transitioned from). Default-child
+	// resolution is suppressed on the way down: the path already names the
+	// child to enter, so letting an intermediate parent descend into its own
+	// default child would enter that child a second time (or enter a child we
+	// are only passing through) before the target. Only the final target may
+	// still descend, for a target that is itself a composite state.
+	for i, stateID := range path {
+		last := i == len(path)-1
+		if err := m.enterStateWithVisited(stateID, event, fromState, nil, last); err != nil {
 			return err
 		}
 	}
@@ -490,10 +496,13 @@ func (m *Machine) pathFromAncestor(target StateID, ancestor StateID) []StateID {
 
 // enterState enters a state and handles conditions/default children
 func (m *Machine) enterState(id StateID, event *Event, fromState StateID) error {
-	return m.enterStateWithVisited(id, event, fromState, nil)
+	return m.enterStateWithVisited(id, event, fromState, nil, true)
 }
 
-func (m *Machine) enterStateWithVisited(id StateID, event *Event, fromState StateID, visited map[StateID]bool) error {
+// enterStateWithVisited enters one state. resolveDefault controls whether a
+// composite state descends into its default child; enterFromAncestor turns it
+// off for the intermediate steps of an explicit path.
+func (m *Machine) enterStateWithVisited(id StateID, event *Event, fromState StateID, visited map[StateID]bool, resolveDefault bool) error {
 	state := m.definition.states[id]
 	if state == nil {
 		return fmt.Errorf("state %q not found", id)
@@ -535,14 +544,14 @@ func (m *Machine) enterStateWithVisited(id StateID, event *Event, fromState Stat
 				if err := m.exitState(id); err != nil {
 					return err
 				}
-				return m.enterStateWithVisited(nextState, event, id, visited)
+				return m.enterStateWithVisited(nextState, event, id, visited, true)
 			}
 		}
 	}
 
 	// Auto-enter default child
-	if state.DefaultChild != "" {
-		return m.enterStateWithVisited(state.DefaultChild, event, id, visited)
+	if resolveDefault && state.DefaultChild != "" {
+		return m.enterStateWithVisited(state.DefaultChild, event, id, visited, true)
 	}
 
 	return nil
